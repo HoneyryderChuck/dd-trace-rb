@@ -1,13 +1,10 @@
 require 'ddtrace/transport/http/env'
-require 'ddtrace/transport/http/compatibility'
 
 module Datadog
   module Transport
     module HTTP
       # Routes, encodes, and sends tracer data to the trace agent via HTTP.
       class Client
-        include Compatibility
-
         attr_reader \
           :apis,
           :api_id
@@ -16,17 +13,20 @@ module Datadog
           @apis = apis
 
           # Activate initial API
-          change_api(api_id)
+          change_api!(api_id)
         end
 
-        def deliver(request)
+        def send_request(request, &block)
+          # Build request into env
           env = build_env(request)
-          response = current_api.call(env)
+
+          # Get response from API
+          response = yield(current_api, env)
 
           # If API should be downgraded, downgrade and try again.
           if downgrade?(response)
             downgrade!
-            response = deliver(parcel)
+            response = send_request(request, &block)
           end
 
           response
@@ -51,7 +51,7 @@ module Datadog
         end
 
         def downgrade!
-          change_api(apis.fallbacks[api_id])
+          change_api!(apis.fallbacks[api_id])
         end
 
         # Raised when configured with an unknown API version
